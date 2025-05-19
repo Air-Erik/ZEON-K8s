@@ -1,0 +1,24 @@
+apiVersion: veleroappoperator.vmware.com/v1alpha1
+kind: VeleroService
+metadata:
+  name: velero
+  namespace: svc-velero-domain-c20
+spec:
+  version: "1.6.1"
+  image: quay.io/vmware-tanzu/velero:v1.6.1
+  plugins:
+    - velero/velero-plugin-for-vsphere:v1.6.1
+    - velero/velero-plugin-for-aws:v1.6.1
+    - velero/velero-plugin-for-restic:v1.6.1
+  objectstoreprovider: aws
+  bucket: velero
+  backuplocationconfig: |
+    region=default
+    s3ForcePathStyle=true
+    s3Url=http://minio.minio.svc.cluster.local:9000
+  snapshotlocationconfig: |
+    region=default
+  nodefaultbackuplocation: false
+  nosecret: false
+  usevolumesnapshots: false
+  guestcbtenabled: false

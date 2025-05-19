@@ -1,0 +1,13 @@
+# minio-pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: k8s-storage-policy
+  resources:
+    requests:
+      storage: 50Gi
