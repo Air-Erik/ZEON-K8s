@@ -1,7 +1,7 @@
 apiVersion: veleroappoperator.vmware.com/v1alpha1
 kind: VeleroService
 metadata:
-  name: velero
+  name: default
   namespace: svc-velero-domain-c20
 spec:
   version: "1.6.1"
@@ -19,6 +19,6 @@ spec:
   snapshotlocationconfig: |
     region=default
   nodefaultbackuplocation: false
-  nosecret: false
   usevolumesnapshots: false
   guestcbtenabled: false
+  nosecret: true
