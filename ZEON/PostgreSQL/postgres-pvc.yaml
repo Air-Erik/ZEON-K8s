@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
-  namespace: prod-zeon
+  namespace: db-test
 spec:
   accessModes:
     - ReadWriteOnce

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: prod-zeon
+  namespace: db-test
 spec:
   serviceName: "postgres"      # будет совпадать с именем LB-Service ниже
   replicas: 1
@@ -15,12 +15,23 @@ spec:
         app: postgres
     spec:
       securityContext:
-        fsGroup: 999           # даём gid=999 (postgres) право писать в том
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
         image: postgres:14
         ports:
         - containerPort: 5432
+        securityContext:
+          runAsUser: 999
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
         env:
         - name: POSTGRES_PASSWORD
           valueFrom:
