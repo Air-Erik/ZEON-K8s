@@ -4,12 +4,12 @@ metadata:
   name: default
   namespace: svc-velero-domain-c20
 spec:
-  version: "1.6.1"
-  image: quay.io/vmware-tanzu/velero:v1.6.1
+  version: "v1.13.0"
+  image: quay.io/vmware-tanzu/velero:v1.13.0
   plugins:
-    - velero/velero-plugin-for-vsphere:v1.6.1
-    - velero/velero-plugin-for-aws:v1.6.1
-    - velero/velero-plugin-for-restic:v1.6.1
+    - velero/velero-plugin-for-vsphere:v1.13.0
+    - velero/velero-plugin-for-aws:v1.13.0
+    - velero/velero-plugin-for-restic:v1.13.0
   objectstoreprovider: aws
   bucket: velero
   backuplocationconfig: |
