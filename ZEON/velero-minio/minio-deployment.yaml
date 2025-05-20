@@ -1,0 +1,48 @@
+# minio-deployment.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: velero-minio
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:latest
+        args:
+          - server
+          - /data
+        ports:
+          - containerPort: 9000
+        env:
+          - name: MINIO_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: minio-credentials
+                key: accesskey
+          - name: MINIO_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: minio-credentials
+                key: secretkey
+        volumeMounts:
+          - name: data
+            mountPath: /data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: k8s-storage-policy
+      resources:
+        requests:
+          storage: 50Gi
