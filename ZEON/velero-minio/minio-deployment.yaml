@@ -15,9 +15,23 @@ spec:
       labels:
         app: minio
     spec:
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: minio
         image: minio/minio:latest
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
         args:
           - server
           - /data
@@ -37,12 +51,7 @@ spec:
         volumeMounts:
           - name: data
             mountPath: /data
-  volumeClaimTemplates:
-  - metadata:
-      name: data
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: k8s-storage-policy
-      resources:
-        requests:
-          storage: 50Gi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: minio-pvc

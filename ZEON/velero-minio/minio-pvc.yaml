@@ -10,4 +10,4 @@ spec:
   storageClassName: k8s-storage-policy
   resources:
     requests:
-      storage: 50Gi
+      storage: 10Gi
