@@ -41,12 +41,12 @@ spec:
           - name: MINIO_ACCESS_KEY
             valueFrom:
               secretKeyRef:
-                name: minio-credentials
+                name: minio-secret
                 key: accesskey
           - name: MINIO_SECRET_KEY
             valueFrom:
               secretKeyRef:
-                name: minio-credentials
+                name: minio-secret
                 key: secretkey
         volumeMounts:
           - name: data
