@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch
+  namespace: opensearch-logger
+spec:
+  serviceName: opensearch-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: opensearch
+  template:
+    metadata:
+      labels:
+        app: opensearch
+    spec:
+      containers:
+      - name: opensearch
+        image: opensearchproject/opensearch:2.19.2
+        ports:
+          - containerPort: 9200
+            name: http
+          - containerPort: 9300
+            name: transport
+        env:
+          - name: cluster.name
+            value: "opensearch-logger"
+          - name: discovery.seed_hosts
+            value: "opensearch-0.opensearch-headless,opensearch-1.opensearch-headless,opensearch-2.opensearch-headless"
+          - name: cluster.initial_master_nodes
+            value: "opensearch-0,opensearch-1,opensearch-2"
+          - name: OPENSEARCH_JAVA_OPTS
+            value: "-Xms1g -Xmx1g"
+          - name: OPENSEARCH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: opensearch-admin
+                key: OPENSEARCH_PASSWORD
+        volumeMounts:
+          - name: data
+            mountPath: /usr/share/opensearch/data
+          - name: config
+            mountPath: /usr/share/opensearch/config/opensearch.yml
+            subPath: opensearch.yml
+      volumes:
+        - name: config
+          configMap:
+            name: opensearch-config
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "k8s-storage-policy"
+      resources:
+        requests:
+          storage: 20Gi

@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboards
+  namespace: opensearch-logger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboards
+  template:
+    metadata:
+      labels:
+        app: dashboards
+    spec:
+      containers:
+      - name: dashboards
+        image: opensearchproject/opensearch-dashboards:2.19.2
+        ports:
+          - containerPort: 5601
+        env:
+          - name: OPENSEARCH_HOSTS
+            value: "http://opensearch-lb:9200"
+          - name: OPENSEARCH_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: dashboards-auth
+                key: OPENSEARCH_USERNAME
+          - name: OPENSEARCH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: dashboards-auth
+                key: OPENSEARCH_PASSWORD
+          - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+            value: "true"
+        volumeMounts:
+          - name: config
+            mountPath: /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
+            subPath: opensearch_dashboards.yml
+      volumes:
+        - name: config
+          configMap:
+            name: dashboards-config

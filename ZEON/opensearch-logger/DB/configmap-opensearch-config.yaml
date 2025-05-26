@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensearch-config
+  namespace: opensearch-logger
+data:
+  opensearch.yml: |
+    cluster.name: zeon-logs
+    network.host: 0.0.0.0
+    path.repo: /usr/share/opensearch/backups
+    # Отключаем весь Security plugin (нет TLS и нет Transport SSL)
+    plugins.security.disabled: true
+    # На всякий случай явно выключаем HTTP-SSL
+    plugins.security.ssl.http.enabled: false
