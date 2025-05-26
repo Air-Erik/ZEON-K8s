@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: db-test
+  namespace: postgres
 spec:
   serviceName: "postgres"      # будет совпадать с именем LB-Service ниже
   replicas: 1
