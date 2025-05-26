@@ -1,0 +1,27 @@
+$VSPHERE_PLUGIN="vsphereveleroplugin/velero-plugin-for-vsphere:v1.5.4"
+$AWS_PLUGIN="velero/velero-plugin-for-aws:v1.9.0"
+
+velero install `
+  --namespace velero `
+  --provider aws `
+  --bucket velero `
+  --plugins $AWS_PLUGIN `
+  --secret-file .\credentials-velero `
+  --backup-location-config region=minio,s3ForcePathStyle=true,s3Url=http://minio.velero-minio.svc.cluster.local:9000 `
+  --features=EnableCSI `
+  --use-node-agent `
+  --default-volumes-to-fs-backup=false
+
+velero plugin add $VSPHERE_PLUGIN
+
+
+velero install `
+  --namespace velero `
+  --provider aws `
+  --bucket velero `
+  --plugins velero/velero-plugin-for-aws:v1.9.0 `
+  --secret-file .\credentials-velero `
+  --backup-location-config region=minio,s3ForcePathStyle=true,s3Url=http://minio.velero-minio.svc.cluster.local:9000 `
+  --features=EnableNodeAgent `
+  --use-node-agent `
+  --default-volumes-to-fs-backup=true

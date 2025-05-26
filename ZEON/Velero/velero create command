@@ -1,0 +1,10 @@
+velero install `
+  --namespace velero `
+  --provider aws `
+  --bucket velero `
+  --secret-file .\cloud-credentials `
+  --plugins velero/velero-plugin-for-aws:v1.7.0,vsphereveleroplugin/velero-plugin-for-vsphere:v1.3.1 `
+  --backup-location-config region=default,s3ForcePathStyle="true",s3Url=http://minio.velero-minio.svc.cluster.local:9000 `
+  --snapshot-location-config server=172.16.50.194,username='administrator@zeon.loc',password='Tf34gfasz!',insecureSkipTLSVerify=true `
+  --use-volume-snapshots `
+  --features=EnableCSI
