@@ -1,0 +1,40 @@
+serviceAccount:
+  create: true
+
+rbac:
+  create: true
+
+imageUpdater:
+  interval: 5m
+  env:
+    - name: SSL_CERT_FILE
+      value: /etc/gitlab/ca/root.crt
+
+config:
+  registries:
+    # для game-bot
+    - name: game-bot-registry
+      prefix: "gitlab-registry.project.client.loc/zeon-ai/backend/game-bot"
+      api_url: "https://gitlab-registry.project.client.loc"
+      credentials: "secret:image-updater-gitlab-deploy-token-game-bot#.dockerconfigjson"
+      default: false
+
+    # для other-service
+    # - name: other-service-registry
+      # prefix: "gitlab-registry.project.client.loc/zeon-ai/backend/other-service"
+      # api_url: "https://gitlab-registry.project.client.loc"
+      # credentials: "secret:gitlab-other-service-token#.dockerconfigjson"
+      # default: false
+
+extraVolumes:
+  - name: root-ca-cert
+    configMap:
+      name: root-ca-cert
+      items:
+        - key: project-client-root.crt
+          path: root.crt
+
+extraVolumeMounts:
+  - name: root-ca-cert
+    mountPath: /etc/gitlab/ca
+    readOnly: true
