@@ -14,10 +14,18 @@ config:
   logLevel: debug
   # Описание registry
   registries:
-    - name: gitlab-registry
-      prefix: gitlab-registry.project.client.loc
-      api_url: https://gitlab-registry.project.client.loc
+    # registry для команды zeon-ai
+    - name: zeon-ai-game-bot-registry
+      prefix: gitlab-registry.project.client.loc/zeon-ai/backend/game-bot
+      api_url: https://gitlab.project.client.loc
       credentials: pullsecret:argocd/image-updater-gitlab-deploy-token-game-bot
+      insecure: false
+
+    # Заглушка для второй команды (пример для team2)
+    - name: team2-registry
+      prefix: gitlab-registry.project.client.loc/team2
+      api_url: https://gitlab.project.client.loc
+      credentials: pullsecret:argocd/image-updater-gitlab-deploy-token-team2
       insecure: false
 
 # Простое монтирование CA сертификата
