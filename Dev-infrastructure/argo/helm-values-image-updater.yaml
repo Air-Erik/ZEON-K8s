@@ -40,3 +40,7 @@ extraEnv:
     value: /usr/local/share/ca-certificates/project-client-root.crt
   - name: CURL_CA_BUNDLE
     value: /usr/local/share/ca-certificates/project-client-root.crt
+  - name: GIT_SSL_CAINFO
+    value: /usr/local/share/ca-certificates/project-client-root.crt
+  - name: GIT_SSL_CAPATH
+    value: /usr/local/share/ca-certificates/
