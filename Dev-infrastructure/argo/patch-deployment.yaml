@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-image-updater
+  namespace: argocd
+
+spec:
+  template:
+    spec:
+      # 1. Удаляем все initContainers (они нам не нужны)
+      initContainers: []
+
+      # 2. Добавляем volume с вашим ConfigMap
+      volumes:
+        - name: root-ca
+          configMap:
+            name: root-ca-cert      # ваш ConfigMap с корневым сертификатом
+            items:
+              - key: project-client-root.crt
+                path: project-client-root.crt
+
+      # 3. В основном контейнере:
+      containers:
+        - name: argocd-image-updater
+          # 3a) Добавляем переменную окружения, указывающую на наш CA
+          env:
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/project-client-root.crt
+
+          # 3b) Монтируем наш ConfigMap-файл
+          volumeMounts:
+            - name: root-ca
+              mountPath: /etc/ssl/certs/project-client-root.crt
+              subPath: project-client-root.crt
+              readOnly: true
+
+          args:
+            - run
+            - --interval=1m
+            - --argocd-auth-token=$(ARGOCD_TOKEN)
+            - --argocd-server-addr=argocd-server.argocd.svc:443
+            - --argocd-insecure=true
+            - --registries-conf-path=/app/config/registries.conf

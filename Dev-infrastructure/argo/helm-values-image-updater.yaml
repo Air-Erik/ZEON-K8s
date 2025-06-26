@@ -1,40 +1,49 @@
+# image-updater-values.yaml
+
+# Общие RBAC/SA-настройки
 serviceAccount:
   create: true
-
 rbac:
   create: true
 
-imageUpdater:
-  interval: 5m
-  env:
-    - name: SSL_CERT_FILE
-      value: /etc/gitlab/ca/root.crt
+# Интервал проверки
+extraArgs:
+  - --interval=1m
 
+# Детальный лог
 config:
-  registries:
-    # для game-bot
-    - name: game-bot-registry
-      prefix: "gitlab-registry.project.client.loc/zeon-ai/backend/game-bot"
-      api_url: "https://gitlab-registry.project.client.loc"
-      credentials: "secret:image-updater-gitlab-deploy-token-game-bot#.dockerconfigjson"
-      default: false
+  log.level: debug
 
-    # для other-service
-    # - name: other-service-registry
-      # prefix: "gitlab-registry.project.client.loc/zeon-ai/backend/other-service"
-      # api_url: "https://gitlab-registry.project.client.loc"
-      # credentials: "secret:gitlab-other-service-token#.dockerconfigjson"
-      # default: false
+  # Описание registry
+  registries.conf: |
+    registries:
+    - name: gitlab-registry
+      prefix: gitlab-registry.project.client.loc
+      api_url: https://gitlab-registry.project.client.loc
+      credentials: pullsecret:argocd/image-updater-gitlab-deploy-token-game-bot
+      insecure: false
 
-extraVolumes:
-  - name: root-ca-cert
-    configMap:
-      name: root-ca-cert
-      items:
-        - key: project-client-root.crt
-          path: root.crt
+# ===== Всё, что связано с монтированием CA и env, идёт внутрь deployment: =====
+deployment:
+  # 1) Монтируем ConfigMap с вашим self-signed CA
+  extraVolumes:
+    - name: root-ca
+      configMap:
+        name: root-ca-cert
+        items:
+          - key: project-client-root.crt
+            path: project-client-root.crt
 
-extraVolumeMounts:
-  - name: root-ca-cert
-    mountPath: /etc/gitlab/ca
-    readOnly: true
+  extraVolumeMounts:
+    - name: root-ca
+      mountPath: /etc/ssl/certs/project-client-root.crt
+      subPath: project-client-root.crt
+      readOnly: true
+
+  # 2) Пробрасываем переменные окружения
+  extraEnv:
+    - name: SSL_CERT_FILE
+      value: /etc/ssl/certs/project-client-root.crt
+    - name: GIT_SSL_CAINFO
+      value: /etc/ssl/certs/project-client-root.crt
+# ================================================================================
