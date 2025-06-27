@@ -28,6 +28,21 @@ config:
       credentials: pullsecret:argocd/image-updater-gitlab-deploy-token-team2
       insecure: false
 
+  # Шаблон сообщения коммита
+  gitCommitTemplate: |-
+    build: 🚀 update {{.AppName}} to {{(index .AppChanges 0).NewTag}}
+
+    ## 📋 Image Update Summary
+    **Application:** {{ .AppName }}
+    **Updated Images:** {{ len .AppChanges }}
+
+    ## 🔄 Changes Details
+    {{ range .AppChanges -}}
+    **Registry:** {{ .Image }}
+    **Previous:** `{{ .OldTag }}`
+    **New:** `{{ .NewTag }}`
+    {{ end -}}
+
 # Простое монтирование CA сертификата
 volumes:
   - name: root-ca
