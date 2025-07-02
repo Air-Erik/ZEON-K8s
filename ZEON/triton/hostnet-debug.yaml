@@ -1,0 +1,15 @@
+# hostnet-debug.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostnet
+  namespace: debug
+spec:
+  hostNetwork: true
+  containers:
+    - name: netshoot
+      image: nicolaka/netshoot:latest
+      command: ["sleep", "infinity"]
+      securityContext:
+        privileged: true          # проще, чем выписывать все поля
+  restartPolicy: Never

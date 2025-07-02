@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: triton
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-client
+  namespace: triton
+  labels:
+    app: curl-client
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.8.0        # очень лёгкий образ с curl
+      command: ["sleep", "infinity"]      # чтобы под жил, пока вы тестируете
+      securityContext:
+        runAsUser: 1000                   # НЕ root
+        runAsGroup: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+  restartPolicy: Never

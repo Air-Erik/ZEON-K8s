@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: triton-route-fix
+  namespace: debug          # здесь уже стоит PodSecurity = privileged
+spec:
+  selector:
+    matchLabels:
+      app: triton-route-fix
+  template:
+    metadata:
+      labels:
+        app: triton-route-fix
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+      - name: route-fix
+        # образ с iproute2 из публичного registry.k8s.io (обычно разрешён)
+        image: registry.k8s.io/network-tools:v1.32.0
+        securityContext:
+          privileged: true
+        command:
+          - sh
+          - -c
+          - |
+            set -e
+            TARGET=192.168.1.190
+            GW=$(ip -4 route list default | awk '{print $3; exit}')
+            IF=$(ip -4 route list default | awk '{print $5; exit}')
+            # делаем таблицу 100 и правило pref 5
+            ip route add ${TARGET}/32 via ${GW} dev ${IF} table 100 || true
+            ip rule  add  pref 5 to ${TARGET} lookup 100        || true
+            # держим контейнер живым
+            sleep infinity
+      restartPolicy: Always
+      tolerations:
+      - operator: Exists

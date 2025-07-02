@@ -1,0 +1,18 @@
+# netshoot-client.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: netshoot-client
+  namespace: triton
+spec:
+  containers:
+    - name: netshoot
+      image: nicolaka/netshoot:latest
+      command: ["sleep", "infinity"]
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+  restartPolicy: Never
