@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: triton
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      containers:
+      - name: nginx
+        # образ без root (uid 101)
+        image: nginxinc/nginx-unprivileged:1.27
+        ports:
+        - containerPort: 8080          # у этого образа nginx слушает 8080
+        securityContext:
+          runAsUser: 101
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-lb
+  namespace: triton
+spec:
+  type: LoadBalancer
+  selector: { app: web }
+  ports:
+  - port: 80
+    targetPort: 8080                 # ↖︎ маппим 80 → 8080

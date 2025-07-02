@@ -1,0 +1,23 @@
+# curl-client.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: triton
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-client
+  namespace: triton
+spec:
+  containers:
+  - name: curl
+    image: curlimages/curl:8.8.0
+    command: ["sleep","infinity"]
+    securityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities: { drop: ["ALL"] }
+      seccompProfile: { type: RuntimeDefault }
+  restartPolicy: Never
