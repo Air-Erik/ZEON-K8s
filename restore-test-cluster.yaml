@@ -1,0 +1,22 @@
+apiVersion: run.tanzu.vmware.com/v1alpha3
+kind: TanzuKubernetesCluster
+metadata:
+  name: restore-test-cluster
+  namespace: restore-test               # ваш vSphere Namespace
+spec:
+  topology:
+    controlPlane:
+      replicas: 3                   # dev-кластер, одной CP-ноды достаточно
+      vmClass: best-effort-small
+      storageClass: k8s-storage-policy
+      tkr:
+        reference:
+          name: v1.30.1---vmware.1-fips-tkg.5
+    nodePools:
+      - name: worker-pool
+        replicas: 9
+        vmClass: best-effort-medium
+        storageClass: k8s-storage-policy
+        tkr:
+          reference:
+            name: v1.30.1---vmware.1-fips-tkg.5
