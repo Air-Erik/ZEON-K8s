@@ -10,7 +10,7 @@ metadata:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 spec:
   rules:
-  - host: zeon-devdashboard.project.client.loc
+  - host: zeon-dev-dashboard.project.client.loc
     http:
       paths:
       - path: /
