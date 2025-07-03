@@ -1,0 +1,33 @@
+apiVersion: run.tanzu.vmware.com/v1alpha3
+kind: TanzuKubernetesCluster
+metadata:
+  name: zeon-dev-cluster
+  namespace: zeon-dev
+
+spec:
+  topology:
+    controlPlane:
+      # Рекомендация: для прод-окружения 3 CP-нод, для dev – достаточно 1
+      replicas: 3
+      vmClass: best-effort-small
+      storageClass: k8s-storage-policy
+      tkr:
+        reference:
+          name: v1.30.1---vmware.1-fips-tkg.5
+    nodePools:
+      - name: worker-pool
+        # Рекомендация: для HA ≥3 воркеров, для теста – 1–2
+        replicas: 5
+        vmClass: best-effort-medium
+        storageClass: k8s-storage-policy
+        tkr:
+          reference:
+            name: v1.30.1---vmware.1-fips-tkg.5
+  settings:
+    network:
+      cni:
+        name: antrea
+      pods:
+        cidrBlocks: ["100.96.0.0/11"]      # новый PodCIDR
+      services:
+        cidrBlocks: ["10.96.0.0/12"]       # дефолтный ServiceCIDR
