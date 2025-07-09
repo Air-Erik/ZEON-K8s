@@ -13,8 +13,9 @@ $env:KUBECTL_VSPHERE_PASSWORD = $pass
 $clusters = @(
     @{ Server = "172.16.50.194"; Namespace = "zeon-prod";          Name = "zeon-prod-cluster"          },
     @{ Server = "172.16.50.194"; Namespace = "zeon-dev";           Name = "zeon-dev-cluster"           },
+    @{ Server = "172.16.50.194"; Namespace = "restore-test"; Name = "restore-test-cluster" },
+    @{ Server = "172.16.50.194"; Namespace = "dev-infrastructure"; Name = "dev-infrastructure-cluster" },
     @{ Server = "172.16.50.194"; Namespace = "restore-test"; Name = "restore-test-cluster" }
-    @{ Server = "172.16.50.194"; Namespace = "dev-infrastructure"; Name = "dev-infrastructure-cluster" }
 )
 
 # 4) Проходим по каждому кластеру и логинимся
