@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: game-bot
+  labels:
+    project: zeon
+    owner: air-erik
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: refiller
+  labels:
+    project: zeon
+    owner: air-erik
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+  labels:
+    project: zeon
+    owner: air-erik
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+  labels:
+    project: zeon
+    owner: air-erik
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opensearch-logger
+  labels:
+    project: zeon
+    owner: air-erik
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/warn-version: latest
