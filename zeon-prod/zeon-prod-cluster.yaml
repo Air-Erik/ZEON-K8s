@@ -15,8 +15,12 @@ spec:
           name: v1.30.1---vmware.1-fips-tkg.5
     nodePools:
       - name: worker-pool
-        replicas: 5
+        replicas: 0
         vmClass: best-effort-medium
+        storageClass: k8s-storage-policy
+      - name: worker-large
+        replicas: 3
+        vmClass: best-effort-large
         storageClass: k8s-storage-policy
         tkr:
           reference:
