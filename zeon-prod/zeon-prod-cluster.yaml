@@ -19,7 +19,7 @@ spec:
         vmClass: best-effort-medium
         storageClass: k8s-storage-policy
       - name: worker-large
-        replicas: 3
+        replicas: 5
         vmClass: best-effort-large
         storageClass: k8s-storage-policy
         tkr:
