@@ -604,20 +604,94 @@ spec:
 
     # Удаляем старый PVC (данные скопированы в новый)
     Write-StatusMessage "Deleting old PVC '$PvcName'..."
-    Invoke-Kubectl -n $Namespace delete pvc $PvcName | Out-Null
 
-    # Ждем удаления
-    Start-Sleep 5
+    # Сначала убедимся что copy Pod не использует PVC
+    Write-StatusMessage "Checking if copy Pod is still using PVC..."
+    $copyPodStillExists = kubectl -n $Namespace get pod $copyPodName --ignore-not-found 2>$null
+    if ($copyPodStillExists) {
+      Write-StatusMessage "Copy Pod still exists, deleting it first..."
+      kubectl -n $Namespace delete pod $copyPodName --wait=false 2>$null | Out-Null
+      Start-Sleep 5
+    }
+
+    # Запускаем delete с коротким timeout
+    Write-StatusMessage "Attempting graceful delete (60s timeout)..."
+    $deleteJob = Start-Job -ScriptBlock {
+      param($ns, $pvc)
+      & kubectl -n $ns delete pvc $pvc --timeout=60s 2>&1
+    } -ArgumentList $Namespace, $PvcName
+
+    # Ждем завершения с timeout
+    $completed = Wait-Job $deleteJob -Timeout 70
+    if ($completed) {
+      $deleteResult = Receive-Job $deleteJob
+      Remove-Job $deleteJob
+      Write-StatusMessage "Old PVC deleted successfully" "Green"
+    } else {
+      Stop-Job $deleteJob
+      Remove-Job $deleteJob
+      Write-StatusMessage "Graceful delete timed out - forcing removal..." "Yellow"
+
+      # Проверяем существует ли PVC
+      $stillExists = kubectl -n $Namespace get pvc $PvcName --ignore-not-found 2>$null
+      if ($stillExists) {
+        Write-StatusMessage "PVC still exists, removing finalizers..."
+
+        # Удаляем finalizers через временный файл
+        $patchFile = [System.IO.Path]::GetTempFileName()
+        '{"metadata":{"finalizers":null}}' | Out-File -FilePath $patchFile -Encoding utf8
+        try {
+          kubectl -n $Namespace patch pvc $PvcName --type=merge --patch-file $patchFile 2>$null | Out-Null
+          Write-StatusMessage "Finalizers removed" "Green"
+        } finally {
+          Remove-Item $patchFile -ErrorAction SilentlyContinue
+        }
+
+        # Принудительное удаление
+        kubectl -n $Namespace delete pvc $PvcName --grace-period=0 --force 2>$null | Out-Null
+        Write-StatusMessage "Force delete issued" "Yellow"
+      }
+    }
+
+    # Ждем пока PVC действительно исчезнет
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+      $exists = kubectl -n $Namespace get pvc $PvcName --ignore-not-found 2>$null
+      if (-not $exists) {
+        break
+      }
+      Write-StatusMessage "Waiting for PVC to be removed..."
+      Start-Sleep 2
+    }
 
     # Переименовываем новый PVC в старое имя
     Write-StatusMessage "Renaming '$NewPvcName' to '$PvcName'..."
 
     # Получаем манифест нового PVC
     $newPvcManifest = Invoke-KubectlJson -n $Namespace get pvc $NewPvcName "-o" json
-
-    # Создаем PVC с оригинальным именем и тем же volumeName
     $volumeName = $newPvcManifest.spec.volumeName
+    Write-StatusMessage "Target PV: $volumeName"
 
+    # Удаляем новый PVC (освобождаем имя, но PV сохранится с Retain)
+    Write-StatusMessage "Deleting temporary PVC '$NewPvcName'..."
+    Invoke-Kubectl -n $Namespace delete pvc $NewPvcName | Out-Null
+    Start-Sleep 10
+
+    # Очищаем claimRef из PV чтобы он стал Available
+    Write-StatusMessage "Clearing claimRef from PV '$volumeName'..."
+    $clearClaimPatch = [System.IO.Path]::GetTempFileName()
+    '{"spec":{"claimRef":null}}' | Out-File -FilePath $clearClaimPatch -Encoding utf8
+    try {
+      Invoke-Kubectl patch pv $volumeName "--type" "merge" "--patch-file" $clearClaimPatch | Out-Null
+      Write-StatusMessage "PV claimRef cleared, PV is now Available" "Green"
+    } finally {
+      Remove-Item $clearClaimPatch -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep 5
+
+    # Создаем PVC с оригинальным именем указывая volumeName
+    Write-StatusMessage "Creating PVC '$PvcName' bound to PV '$volumeName'..."
     $renamedPvcYaml = @"
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -633,11 +707,6 @@ spec:
       storage: $($newPvcManifest.spec.resources.requests.storage)
 "@
 
-    # Удаляем новый PVC (освобождаем имя, но PV сохранится с Retain)
-    Invoke-Kubectl -n $Namespace delete pvc $NewPvcName | Out-Null
-    Start-Sleep 5
-
-    # Создаем PVC с оригинальным именем
     $renamedPvcYaml | Apply-KubectlYaml | Out-Null
 
     $ok = Wait-PvcBound -NS $Namespace -PVC $PvcName -TimeoutSec 60
