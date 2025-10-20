@@ -52,7 +52,7 @@ param(
   [Parameter()]                 [string] $NewPvcName,
   [Parameter()]                 [string] $ApplicationName,
   [Parameter()]                 [ValidateSet("StatefulSet", "Deployment")] [string] $ApplicationType,
-  [Parameter()]                 [string] $CopyImage = "ubuntu:22.04",
+  [Parameter()]                 [string] $CopyImage = "instrumentisto/rsync-ssh:latest",
   [Parameter()]                 [int]    $TimeoutSeconds = 3600,
   [switch] $DryRun,
   [switch] $KeepCopyPod
@@ -414,10 +414,22 @@ metadata:
     app: pvc-migration-copy
 spec:
   restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
   containers:
   - name: copy
     image: $CopyImage
-    command: ["/bin/bash"]
+    command: ["/bin/sh"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      runAsNonRoot: true
+      runAsUser: 1000
     args:
     - "-c"
     - |
@@ -426,11 +438,12 @@ spec:
       echo "Source: /source"
       echo "Target: /target"
 
-      # Install rsync if not available
+      # Check rsync availability
       if ! command -v rsync >/dev/null 2>&1; then
-        echo "Installing rsync..."
-        apt-get update && apt-get install -y rsync
+        echo "ERROR: rsync not found in image!"
+        exit 1
       fi
+      echo "rsync is available"
 
       # Check source data
       echo "Source directory contents:"
@@ -441,7 +454,17 @@ spec:
 
       # Copy data with rsync
       echo "Starting rsync copy..."
-      rsync -avx --progress /source/ /target/
+      rsync -avx --progress --omit-dir-times /source/ /target/ || {
+        EXIT_CODE=$?
+        echo "rsync finished with code: $EXIT_CODE"
+        # Code 23 = partial transfer (usually extended attrs) - acceptable for MinIO
+        if [ $EXIT_CODE -eq 23 ]; then
+          echo "[WARNING] Some file attributes not transferred (acceptable)"
+        elif [ $EXIT_CODE -ne 0 ]; then
+          echo "[ERROR] rsync failed with code $EXIT_CODE"
+          exit $EXIT_CODE
+        fi
+      }
 
       echo "Copy completed successfully!"
       echo "Target directory contents:"
@@ -449,15 +472,15 @@ spec:
 
       # Verify copy
       echo "Verifying copy integrity..."
-      SOURCE_SIZE=$$(du -sb /source 2>/dev/null | cut -f1 || echo "0")
-      TARGET_SIZE=$$(du -sb /target 2>/dev/null | cut -f1 || echo "0")
-      echo "Source size: $$SOURCE_SIZE bytes"
-      echo "Target size: $$TARGET_SIZE bytes"
+      SOURCE_SIZE=`$(du -sb /source 2>/dev/null | cut -f1 || echo "0")
+      TARGET_SIZE=`$(du -sb /target 2>/dev/null | cut -f1 || echo "0")
+      echo "Source size: `$SOURCE_SIZE bytes"
+      echo "Target size: `$TARGET_SIZE bytes"
 
-      if [ "$$SOURCE_SIZE" -eq "$$TARGET_SIZE" ]; then
-        echo "✅ Copy verification successful!"
+      if [ "`$SOURCE_SIZE" -eq "`$TARGET_SIZE" ]; then
+        echo "[OK] Copy verification successful!"
       else
-        echo "⚠️  Size mismatch detected!"
+        echo "[WARNING] Size mismatch detected!"
         exit 1
       fi
     volumeMounts:
@@ -508,9 +531,66 @@ spec:
 
   if ($ApplicationType -eq "Deployment") {
     Update-DeploymentPvcName -NS $Namespace -DeploymentName $ApplicationName -OldPvcName $PvcName -NewPvcName $NewPvcName
+    Write-StatusMessage "Deployment updated to use new PVC" "Green"
   } elseif ($ApplicationType -eq "StatefulSet") {
-    Write-StatusMessage "StatefulSet detected - manual VolumeClaimTemplate update required" "Warning"
-    Write-StatusMessage "You'll need to manually update the StatefulSet or rename the new PVC to match" "Warning"
+    # Для StatefulSet нужно переименовать PVC
+    Write-StatusMessage "StatefulSet detected - swapping PVC names..." "Yellow"
+
+    # Установим новый PV в Retain перед переименованием
+    $newPvcManifestTemp = Invoke-KubectlJson -n $Namespace get pvc $NewPvcName "-o" json
+    $newPvName = $newPvcManifestTemp.spec.volumeName
+
+    $tempFile = [System.IO.Path]::GetTempFileName()
+    '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}' | Out-File -FilePath $tempFile -Encoding utf8
+    try {
+      Invoke-Kubectl patch pv $newPvName "--type" "merge" "--patch-file" $tempFile | Out-Null
+      Write-StatusMessage "New PV '$newPvName' set to Retain policy" "Green"
+    } finally {
+      Remove-Item $tempFile -ErrorAction SilentlyContinue
+    }
+
+    # Удаляем старый PVC (данные скопированы в новый)
+    Write-StatusMessage "Deleting old PVC '$PvcName'..."
+    Invoke-Kubectl -n $Namespace delete pvc $PvcName | Out-Null
+
+    # Ждем удаления
+    Start-Sleep 5
+
+    # Переименовываем новый PVC в старое имя
+    Write-StatusMessage "Renaming '$NewPvcName' to '$PvcName'..."
+
+    # Получаем манифест нового PVC
+    $newPvcManifest = Invoke-KubectlJson -n $Namespace get pvc $NewPvcName "-o" json
+
+    # Создаем PVC с оригинальным именем и тем же volumeName
+    $volumeName = $newPvcManifest.spec.volumeName
+
+    $renamedPvcYaml = @"
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: $PvcName
+  namespace: $Namespace
+spec:
+  accessModes: [$($newPvcManifest.spec.accessModes | ForEach-Object { """$_""" } | Join-String -Separator ", ")]
+  storageClassName: $NewStorageClass
+  volumeName: $volumeName
+  resources:
+    requests:
+      storage: $($newPvcManifest.spec.resources.requests.storage)
+"@
+
+    # Удаляем новый PVC (освобождаем имя, но PV сохранится с Retain)
+    Invoke-Kubectl -n $Namespace delete pvc $NewPvcName | Out-Null
+    Start-Sleep 5
+
+    # Создаем PVC с оригинальным именем
+    $renamedPvcYaml | Apply-KubectlYaml | Out-Null
+
+    $ok = Wait-PvcBound -NS $Namespace -PVC $PvcName -TimeoutSec 60
+    ThrowIfFailed $ok "Renamed PVC '$PvcName' did not become Bound"
+
+    Write-StatusMessage "PVC successfully renamed to '$PvcName' for StatefulSet" "Green"
   }
 
   Write-ProgressStep "Application updated" "Completed"
