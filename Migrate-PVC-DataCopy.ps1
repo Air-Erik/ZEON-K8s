@@ -26,7 +26,10 @@
   Тип приложения: StatefulSet или Deployment. Если не указано - автоопределение.
 
 .PARAMETER CopyImage
-  Docker образ для copy Pod (по умолчанию ubuntu:22.04).
+  Docker образ для copy Pod (по умолчанию instrumentisto/rsync-ssh:latest).
+
+.PARAMETER CopyAsUser
+  UID пользователя для copy Pod (по умолчанию 1000). Для PostgreSQL используйте 999, для MongoDB 999, для MySQL 999.
 
 .PARAMETER TimeoutSeconds
   Глобальный таймаут (по умолчанию 3600 сек = 1 час).
@@ -55,6 +58,9 @@
 
 .EXAMPLE
   .\Migrate-PVC-DataCopy.ps1 -Namespace minio -PvcName data-minio-0 -NewStorageClass premium -CreateSnapshot -StopAfterCopy
+
+.EXAMPLE
+  .\Migrate-PVC-DataCopy.ps1 -Namespace postgres -PvcName postgres-storage-postgres-0 -NewStorageClass k8s-sha-zeon-storage-policy -CreateSnapshot -CopyAsUser 999
 #>
 
 [CmdletBinding()]
@@ -66,6 +72,7 @@ param(
   [Parameter()]                 [string] $ApplicationName,
   [Parameter()]                 [ValidateSet("StatefulSet", "Deployment")] [string] $ApplicationType,
   [Parameter()]                 [string] $CopyImage = "instrumentisto/rsync-ssh:latest",
+  [Parameter()]                 [int]    $CopyAsUser = 1000,
   [Parameter()]                 [int]    $TimeoutSeconds = 3600,
   [Parameter()]                 [string] $SnapshotClass = "volumesnapshotclass-delete",
   [switch] $DryRun,
@@ -206,7 +213,10 @@ function Wait-PodRunning {
     -Condition {
       try {
         $pod = Invoke-KubectlJson -n $NS get pod $PodName "-o" json
-        return ($pod.status.phase -eq "Running")
+        $phase = $pod.status.phase
+        # Pod считается готовым если Running, Succeeded или Failed
+        # (быстрые задачи могут завершиться до проверки Running)
+        return ($phase -eq "Running" -or $phase -eq "Succeeded" -or $phase -eq "Failed")
       } catch { return $false }
     }
 }
@@ -482,8 +492,8 @@ spec:
   restartPolicy: Never
   securityContext:
     runAsNonRoot: true
-    runAsUser: 1000
-    fsGroup: 1000
+    runAsUser: $CopyAsUser
+    fsGroup: $CopyAsUser
     seccompProfile:
       type: RuntimeDefault
   containers:
@@ -495,7 +505,7 @@ spec:
       capabilities:
         drop: ["ALL"]
       runAsNonRoot: true
-      runAsUser: 1000
+      runAsUser: $CopyAsUser
     args:
     - "-c"
     - |
@@ -607,11 +617,19 @@ spec:
     $ok = Wait-PodRunning -NS $Namespace -PodName $copyPodName -TimeoutSec 300
     ThrowIfFailed $ok "Copy Pod '$copyPodName' did not start in time"
 
-    Write-StatusMessage "Copy Pod is running, copying data..." "Green"
+    # Check current phase
+    $podCurrentStatus = Invoke-KubectlJson -n $Namespace get pod $copyPodName "-o" json
+    $currentPhase = $podCurrentStatus.status.phase
 
-    # Wait for copy to complete
-    $ok = Wait-PodCompleted -NS $Namespace -PodName $copyPodName -TimeoutSec $TimeoutSeconds
-    ThrowIfFailed $ok "Data copy did not complete in time (timeout: $TimeoutSeconds seconds)"
+    if ($currentPhase -eq "Running") {
+      Write-StatusMessage "Copy Pod is running, copying data..." "Green"
+
+      # Wait for copy to complete
+      $ok = Wait-PodCompleted -NS $Namespace -PodName $copyPodName -TimeoutSec $TimeoutSeconds
+      ThrowIfFailed $ok "Data copy did not complete in time (timeout: $TimeoutSeconds seconds)"
+    } elseif ($currentPhase -eq "Succeeded" -or $currentPhase -eq "Failed") {
+      Write-StatusMessage "Copy Pod already completed (phase: $currentPhase)" "Green"
+    }
 
     # Check Pod status
     $podStatus = Invoke-KubectlJson -n $Namespace get pod $copyPodName "-o" json

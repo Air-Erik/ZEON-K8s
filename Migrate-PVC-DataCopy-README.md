@@ -69,6 +69,7 @@
 | `-ApplicationName` | ⚪ | Имя приложения (автоопределение) |
 | `-ApplicationType` | ⚪ | StatefulSet/Deployment (автоопределение) |
 | `-CopyImage` | ⚪ | Docker образ для copy Pod (по умолчанию: `instrumentisto/rsync-ssh:latest`) |
+| `-CopyAsUser` | ⚪ | **UID для copy Pod (по умолчанию: 1000). PostgreSQL/MongoDB/MySQL: 999** |
 | `-TimeoutSeconds` | ⚪ | Таймаут копирования (по умолчанию: 3600 сек) |
 | `-CreateSnapshot` | ⚪ | **Создать snapshot перед миграцией (РЕКОМЕНДУЕТСЯ)** |
 | `-SnapshotClass` | ⚪ | VolumeSnapshotClass (по умолчанию: volumesnapshotclass-delete) |
@@ -89,7 +90,49 @@
 9. 🔄 **Обновление** — привязка приложения к новому PVC
 10. ⬆️ **Scale Up** — запуск приложения
 
+## ⚠️ Важно: UID для разных приложений
+
+Разные приложения используют разные UID для своих данных. **Обязательно укажите правильный UID** через параметр `-CopyAsUser`:
+
+| Приложение | UID | Параметр |
+|------------|-----|----------|
+| MinIO | 1000 | По умолчанию ✅ |
+| **PostgreSQL** | **999** | `-CopyAsUser 999` ⚠️ |
+| **MongoDB** | **999** | `-CopyAsUser 999` ⚠️ |
+| **MySQL** | **999** | `-CopyAsUser 999` ⚠️ |
+| **Redis** | **999** | `-CopyAsUser 999` ⚠️ |
+| Веб-приложения | 1000 | По умолчанию ✅ |
+
+**Как узнать UID вашего приложения:**
+```bash
+kubectl -n <namespace> exec <pod-name> -- id
+# Или проверьте владельца файлов:
+kubectl -n <namespace> exec <pod-name> -- ls -ln /var/lib/postgresql/data
+```
+
 ## Примеры использования
+
+### PostgreSQL (UID 999)
+```powershell
+# PostgreSQL ТРЕБУЕТ CopyAsUser 999!
+.\Migrate-PVC-DataCopy.ps1 `
+  -Namespace postgres `
+  -PvcName postgres-storage-postgres-0 `
+  -NewStorageClass k8s-sha-zeon-storage-policy `
+  -CreateSnapshot `
+  -CopyAsUser 999
+```
+
+### MongoDB (UID 999)
+```powershell
+# MongoDB ТРЕБУЕТ CopyAsUser 999!
+.\Migrate-PVC-DataCopy.ps1 `
+  -Namespace mongodb `
+  -PvcName mongo-persistent-storage-mongodb-0 `
+  -NewStorageClass premium-ssd `
+  -CreateSnapshot `
+  -CopyAsUser 999
+```
 
 ### OpenSearch StatefulSet
 ```powershell
@@ -115,8 +158,8 @@
 # Этап 1: Копирование с остановкой для проверки
 .\Migrate-PVC-DataCopy.ps1 `
   -Namespace postgres `
-  -PvcName data-postgres-0 `
-  -NewStorageClass premium-ssd `
+  -PvcName postgres-storage-postgres-0 `
+  -NewStorageClass k8s-sha-zeon-storage-policy `
   -CreateSnapshot `
   -StopAfterCopy
 
@@ -125,8 +168,8 @@
 # Этап 2: Завершение миграции
 .\Migrate-PVC-DataCopy.ps1 `
   -Namespace postgres `
-  -PvcName data-postgres-0 `
-  -NewStorageClass premium-ssd
+  -PvcName postgres-storage-postgres-0 `
+  -NewStorageClass k8s-sha-zeon-storage-policy
 ```
 
 ### Web приложение (Deployment)
