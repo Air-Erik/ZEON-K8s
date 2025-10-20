@@ -37,11 +37,24 @@
 .PARAMETER KeepCopyPod
   Не удалять copy Pod после завершения (для отладки).
 
+.PARAMETER CreateSnapshot
+  Создать VolumeSnapshot исходного PVC перед началом миграции (рекомендуется).
+
+.PARAMETER SnapshotClass
+  Имя VolumeSnapshotClass (по умолчанию volumesnapshotclass-delete).
+
+.PARAMETER StopAfterCopy
+  Остановиться после копирования данных, не удалять старый PVC и не переключать приложение.
+  Позволяет проверить данные в новом PVC перед финальной миграции.
+
 .EXAMPLE
-  .\Migrate-PVC-DataCopy.ps1 -Namespace minio -PvcName minio-storage-minio-0 -NewStorageClass k8s-sha-zeon-storage-policy
+  .\Migrate-PVC-DataCopy.ps1 -Namespace minio -PvcName minio-storage-minio-0 -NewStorageClass k8s-sha-zeon-storage-policy -CreateSnapshot
 
 .EXAMPLE
   .\Migrate-PVC-DataCopy.ps1 -Namespace webapp -PvcName app-data -NewStorageClass premium-ssd -NewPvcName app-data-v2 -DryRun
+
+.EXAMPLE
+  .\Migrate-PVC-DataCopy.ps1 -Namespace minio -PvcName data-minio-0 -NewStorageClass premium -CreateSnapshot -StopAfterCopy
 #>
 
 [CmdletBinding()]
@@ -54,14 +67,18 @@ param(
   [Parameter()]                 [ValidateSet("StatefulSet", "Deployment")] [string] $ApplicationType,
   [Parameter()]                 [string] $CopyImage = "instrumentisto/rsync-ssh:latest",
   [Parameter()]                 [int]    $TimeoutSeconds = 3600,
+  [Parameter()]                 [string] $SnapshotClass = "volumesnapshotclass-delete",
   [switch] $DryRun,
-  [switch] $KeepCopyPod
+  [switch] $KeepCopyPod,
+  [switch] $CreateSnapshot,
+  [switch] $StopAfterCopy
 )
 
 # --- Global Variables ----------------------------------------------------------
 
-$script:TotalSteps = 8
+$script:TotalSteps = if ($CreateSnapshot) { 9 } else { 8 }
 $script:CurrentStep = 0
+$script:SnapshotName = ""
 
 # --- Helper Functions ----------------------------------------------------------
 
@@ -204,6 +221,18 @@ function Wait-PodCompleted {
         $phase = $pod.status.phase
         # Pod завершен если Succeeded или Failed
         return ($phase -eq "Succeeded" -or $phase -eq "Failed")
+      } catch { return $false }
+    }
+}
+
+function Wait-VolumeSnapshotReady {
+  param([string]$NS, [string]$Snap, [int]$TimeoutSec)
+  return Wait-Until -TimeoutSec $TimeoutSec `
+    -WaitingMessage "Waiting VolumeSnapshot '$Snap' to be ready..." `
+    -Condition {
+      try {
+        $vs = Invoke-KubectlJson -n $NS get volumesnapshot $Snap "-o" json
+        return ($vs.status.readyToUse -eq $true)
       } catch { return $false }
     }
 }
@@ -354,7 +383,42 @@ try {
 
   Write-ProgressStep "Application discovery completed: $ApplicationType '$ApplicationName'" "Completed"
 
-  # Step 3: Create New PVC
+  # Step 3: Optional Create Snapshot for Safety
+  if ($CreateSnapshot) {
+    Write-ProgressStep "Creating safety VolumeSnapshot" "Running"
+
+    $script:SnapshotName = "$PvcName-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    Write-StatusMessage "Creating snapshot '$script:SnapshotName'..."
+
+    $snapshotYaml = @"
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: $script:SnapshotName
+  namespace: $Namespace
+spec:
+  volumeSnapshotClassName: $SnapshotClass
+  source:
+    persistentVolumeClaimName: $PvcName
+"@
+
+    $snapshotYaml | Apply-KubectlYaml | Out-Null
+
+    if (-not $DryRun) {
+      $ok = Wait-VolumeSnapshotReady -NS $Namespace -Snap $script:SnapshotName -TimeoutSec 600
+      ThrowIfFailed $ok "VolumeSnapshot '$script:SnapshotName' did not become ready in time"
+
+      $snapJson = Invoke-KubectlJson -n $Namespace get volumesnapshot $script:SnapshotName "-o" json
+      $restoreSize = $snapJson.status.restoreSize
+      Write-StatusMessage "Snapshot ready, restore size: $restoreSize" "Green"
+    } else {
+      Write-StatusMessage "[DRY-RUN] Would create snapshot" "Yellow"
+    }
+
+    Write-ProgressStep "Safety snapshot created successfully" "Completed"
+  }
+
+  # Step 4: Create New PVC
   Write-ProgressStep "Creating new PVC on target StorageClass" "Running"
 
   $sourceSize = $sourcePvc.spec.resources.requests.storage
@@ -579,6 +643,34 @@ spec:
 
   Write-ProgressStep "Data copy completed successfully" "Completed"
 
+  # Check if we should stop here
+  if ($StopAfterCopy) {
+    Write-Host ""
+    Write-Host "[INFO] StopAfterCopy flag detected - migration paused" -ForegroundColor Blue
+    Write-Host "=====================================" -ForegroundColor Blue
+    Write-Host "[OK] Data has been copied to new PVC: $NewPvcName" -ForegroundColor Green
+    Write-Host "[OK] Old PVC is still intact: $PvcName" -ForegroundColor Green
+    Write-Host "[OK] Application is scaled down: $ApplicationType '$ApplicationName'" -ForegroundColor Gray
+    if ($script:SnapshotName) {
+      Write-Host "[OK] Safety snapshot created: $script:SnapshotName" -ForegroundColor Gray
+    }
+    Write-Host ""
+    Write-Host "[VERIFY] Verification commands:" -ForegroundColor Yellow
+    Write-Host "   # Check new PVC data" -ForegroundColor Gray
+    Write-Host "   kubectl -n $Namespace get pvc $NewPvcName" -ForegroundColor Gray
+    Write-Host "   # Mount and verify (example):" -ForegroundColor Gray
+    Write-Host "   kubectl -n $Namespace run verify --image=busybox --rm -it --restart=Never -- ls -lah /data" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "[CONTINUE] To complete migration, run without -StopAfterCopy:" -ForegroundColor Cyan
+    Write-Host "   .\Migrate-PVC-DataCopy.ps1 -Namespace $Namespace -PvcName $PvcName -NewStorageClass $NewStorageClass" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "[ROLLBACK] To rollback (delete new PVC, scale up app):" -ForegroundColor Yellow
+    Write-Host "   kubectl -n $Namespace delete pvc $NewPvcName" -ForegroundColor Gray
+    Write-Host "   kubectl -n $Namespace scale $($ApplicationType.ToLower())/$ApplicationName --replicas=$originalReplicas" -ForegroundColor Gray
+
+    return
+  }
+
   # Step 7: Update Application
   Write-ProgressStep "Updating application to use new PVC" "Running"
 
@@ -737,6 +829,9 @@ spec:
   Write-Host "[OK] New StorageClass: $NewStorageClass" -ForegroundColor Gray
   Write-Host "[OK] Application: $ApplicationType '$ApplicationName'" -ForegroundColor Gray
   Write-Host "[OK] Copy Pod: $copyPodName" -ForegroundColor Gray
+  if ($script:SnapshotName) {
+    Write-Host "[OK] Safety Snapshot: $script:SnapshotName (preserved for rollback)" -ForegroundColor Gray
+  }
   Write-Host ""
   Write-Host "[CLEANUP] Manual cleanup commands:" -ForegroundColor Yellow
   Write-Host "   # Verify application is working" -ForegroundColor Gray
@@ -746,6 +841,9 @@ spec:
   Write-Host "   # After verification, remove old resources:" -ForegroundColor Gray
   if (-not $KeepCopyPod) {
     Write-Host "   kubectl -n $Namespace delete pod $copyPodName" -ForegroundColor Gray
+  }
+  if ($script:SnapshotName) {
+    Write-Host "   kubectl -n $Namespace delete volumesnapshot $script:SnapshotName  # Optional: delete safety snapshot" -ForegroundColor Gray
   }
   Write-Host "   kubectl -n $Namespace delete pvc $PvcName  # WARNING: This will delete old data!" -ForegroundColor Gray
   Write-Host ""
@@ -762,6 +860,10 @@ spec:
   Write-Host "[ROLLBACK] Rollback information:" -ForegroundColor Yellow
   Write-Host "   - New PVC '$NewPvcName' may need manual cleanup" -ForegroundColor Gray
   Write-Host "   - Copy Pod '$copyPodName' may need manual cleanup" -ForegroundColor Gray
+  if ($script:SnapshotName) {
+    Write-Host "   - Safety snapshot preserved: $script:SnapshotName" -ForegroundColor Gray
+    Write-Host "   - To restore: Create PVC from snapshot if needed" -ForegroundColor Gray
+  }
   Write-Host "   - Scale application back up: kubectl -n $Namespace scale $($ApplicationType.ToLower())/$ApplicationName --replicas=$originalReplicas" -ForegroundColor Gray
   exit 1
 } finally {
