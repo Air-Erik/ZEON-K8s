@@ -16,6 +16,7 @@ $clusters = @(
     @{ Server = "172.16.50.194"; Namespace = "restore-test"; Name = "restore-test-cluster" },
     @{ Server = "172.16.50.194"; Namespace = "dev-infrastructure"; Name = "dev-infrastructure-cluster" },
     @{ Server = "172.16.50.194"; Namespace = "restore-test"; Name = "restore-test-cluster" }
+    @{ Server = "172.16.50.194"; Namespace = "dev-test"; Name = "dev-test-cluster" }
 )
 
 # 4) Проходим по каждому кластеру и логинимся
