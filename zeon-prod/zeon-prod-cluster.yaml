@@ -9,7 +9,7 @@ spec:
     controlPlane:
       replicas: 3
       vmClass: best-effort-medium
-      storageClass: k8s-storage-policy
+      storageClass: k8s-sha-zeon-storage-policy
       tkr:
         reference:
           name: v1.30.1---vmware.1-fips-tkg.5
@@ -17,17 +17,17 @@ spec:
       - name: worker-pool
         replicas: 0
         vmClass: best-effort-medium
-        storageClass: k8s-storage-policy
+        storageClass: k8s-sha-zeon-storage-policy
       - name: worker-large
         replicas: 5
         vmClass: best-effort-large
-        storageClass: k8s-storage-policy
+        storageClass: k8s-sha-zeon-storage-policy
         tkr:
           reference:
             name: v1.30.1---vmware.1-fips-tkg.5
   settings:
     storage:
-      defaultClass: k8s-storage-policy
+      defaultClass: k8s-sha-zeon-storage-policy
     network:
       cni:
         name: antrea
