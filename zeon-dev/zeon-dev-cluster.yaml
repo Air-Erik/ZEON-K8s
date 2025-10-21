@@ -10,7 +10,7 @@ spec:
       # Рекомендация: для прод-окружения 3 CP-нод, для dev – достаточно 1
       replicas: 3
       vmClass: best-effort-small
-      storageClass: k8s-storage-policy
+      storageClass: k8s-sha-zeon-storage-policy
       tkr:
         reference:
           name: v1.30.1---vmware.1-fips-tkg.5
@@ -19,13 +19,13 @@ spec:
         # Рекомендация: для HA ≥3 воркеров, для теста – 1–2
         replicas: 5
         vmClass: best-effort-medium
-        storageClass: k8s-storage-policy
+        storageClass: k8s-sha-zeon-storage-policy
         tkr:
           reference:
             name: v1.30.1---vmware.1-fips-tkg.5
   settings:
     storage:
-      defaultClass: k8s-storage-policy
+      defaultClass: k8s-sha-zeon-storage-policy
     network:
       cni:
         name: antrea
