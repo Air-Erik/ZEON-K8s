@@ -129,7 +129,7 @@ kubectl -n <namespace> exec <pod-name> -- ls -ln /var/lib/postgresql/data
 .\Migrate-PVC-DataCopy.ps1 `
   -Namespace mongodb `
   -PvcName mongo-persistent-storage-mongodb-0 `
-  -NewStorageClass premium-ssd `
+  -NewStorageClass k8s-sha-zeon-storage-policy `
   -CreateSnapshot `
   -CopyAsUser 999
 ```
@@ -138,8 +138,16 @@ kubectl -n <namespace> exec <pod-name> -- ls -ln /var/lib/postgresql/data
 ```powershell
 # Миграция OpenSearch с ZFS на sha-zeon
 .\Migrate-PVC-DataCopy.ps1 `
-  -Namespace opensearch `
-  -PvcName data-opensearch-cluster-0 `
+  -Namespace opensearch-logger `
+  -PvcName data-opensearch-0 `
+  -NewStorageClass k8s-sha-zeon-storage-policy
+```
+
+```powershell
+# Миграция OpenSearch с ZFS на sha-zeon
+.\Migrate-PVC-DataCopy.ps1 `
+  -Namespace n8n `
+  -PvcName n8n-data `
   -NewStorageClass k8s-sha-zeon-storage-policy
 ```
 
@@ -149,8 +157,7 @@ kubectl -n <namespace> exec <pod-name> -- ls -ln /var/lib/postgresql/data
 .\Migrate-PVC-DataCopy.ps1 `
   -Namespace minio `
   -PvcName minio-storage-minio-0 `
-  -NewStorageClass k8s-sha-zeon-storage-policy `
-  -CreateSnapshot
+  -NewStorageClass k8s-sha-zeon-storage-policy
 ```
 
 ### Двухэтапная миграция (проверка данных)
@@ -160,8 +167,8 @@ kubectl -n <namespace> exec <pod-name> -- ls -ln /var/lib/postgresql/data
   -Namespace postgres `
   -PvcName postgres-storage-postgres-0 `
   -NewStorageClass k8s-sha-zeon-storage-policy `
+  -CopyAsUser 999 `
   -CreateSnapshot `
-  -StopAfterCopy
 
 # Проверьте данные вручную...
 

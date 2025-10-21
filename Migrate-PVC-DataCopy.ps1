@@ -458,21 +458,74 @@ spec:
   Write-StatusMessage "New PVC '$NewPvcName' is ready" "Green"
   Write-ProgressStep "New PVC created successfully" "Completed"
 
-  # Step 4: Scale Down Application
-  Write-ProgressStep "Scaling down application for data copy" "Running"
+  # Step 4: Check Application is Scaled Down
+  Write-ProgressStep "Checking application is scaled down" "Running"
 
-  Write-StatusMessage "Scaling $ApplicationType '$ApplicationName' to 0 replicas..."
-  switch ($ApplicationType) {
-    "StatefulSet" { Invoke-Kubectl -n $Namespace scale sts/$ApplicationName "--replicas" "0" | Out-Null }
-    "Deployment"  { Invoke-Kubectl -n $Namespace scale deployment/$ApplicationName "--replicas" "0" | Out-Null }
-  }
+  Write-Host ""
+  Write-Host "[MANUAL ACTION REQUIRED]" -ForegroundColor Yellow
+  Write-Host "=====================================" -ForegroundColor Yellow
+  Write-Host "Please ensure the application is scaled down BEFORE continuing:" -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "For StatefulSet:" -ForegroundColor Cyan
+  Write-Host "  kubectl -n $Namespace scale sts/$ApplicationName --replicas=0" -ForegroundColor Gray
+  Write-Host ""
+  Write-Host "For Deployment:" -ForegroundColor Cyan
+  Write-Host "  kubectl -n $Namespace scale deployment/$ApplicationName --replicas=0" -ForegroundColor Gray
+  Write-Host ""
+  Write-Host "For ArgoCD managed apps:" -ForegroundColor Cyan
+  Write-Host "  1. Pause auto-sync in ArgoCD UI or CLI" -ForegroundColor Gray
+  Write-Host "  2. Then scale down manually" -ForegroundColor Gray
+  Write-Host "=====================================" -ForegroundColor Yellow
+  Write-Host ""
+
+  # Автоматическое масштабирование закомментировано из-за ArgoCD
+  # Write-StatusMessage "Scaling $ApplicationType '$ApplicationName' to 0 replicas..."
+  # switch ($ApplicationType) {
+  #   "StatefulSet" { Invoke-Kubectl -n $Namespace scale sts/$ApplicationName --replicas=0 | Out-Null }
+  #   "Deployment"  { Invoke-Kubectl -n $Namespace scale deployment/$ApplicationName --replicas=0 | Out-Null }
+  # }
 
   if (-not $DryRun) {
-    # Wait for pods to disappear
-    Start-Sleep 10
+    # Проверяем что приложение действительно остановлено
+    $currentReplicas = kubectl -n $Namespace get $($ApplicationType.ToLower()) $ApplicationName -o jsonpath='{.status.replicas}' 2>$null
+    if ($currentReplicas -and $currentReplicas -gt 0) {
+      Write-Host ""
+      Write-Host "[WARNING] Application still has $currentReplicas running replicas!" -ForegroundColor Red
+      Write-Host "Please scale down to 0 replicas before continuing." -ForegroundColor Red
+      Read-Host "Press Enter when application is scaled down to 0"
+    } else {
+      Write-StatusMessage "Application is scaled down (0 replicas)" "Green"
+    }
+
+    # Дополнительная проверка - дождаться полного удаления Pods
+    Write-StatusMessage "Waiting for Pods to fully terminate and volumes to detach..."
+    Start-Sleep 15
+
+    # Проверяем что Pod действительно нет
+    $remainingPods = kubectl -n $Namespace get pods -l app=$ApplicationName --no-headers 2>$null
+    if ($remainingPods) {
+      Write-StatusMessage "Waiting for remaining Pods to terminate..." "Yellow"
+      Start-Sleep 30
+    }
+
+    # Проверяем и очищаем застрявшие VolumeAttachments для исходного PVC
+    Write-StatusMessage "Checking for stuck VolumeAttachments..."
+    $sourcePvName = $sourcePvc.spec.volumeName
+    $attachments = kubectl get volumeattachment -o json 2>$null | ConvertFrom-Json
+    foreach ($va in $attachments.items) {
+      if ($va.spec.source.persistentVolumeName -eq $sourcePvName) {
+        $vaName = $va.metadata.name
+        Write-StatusMessage "Found stuck VolumeAttachment for source PVC: $vaName" "Yellow"
+        Write-StatusMessage "Deleting VolumeAttachment to free volume..."
+        kubectl delete volumeattachment $vaName 2>$null | Out-Null
+        Start-Sleep 5
+      }
+    }
+
+    Write-StatusMessage "Volumes should be detached now" "Green"
   }
 
-  Write-ProgressStep "Application scaled down" "Completed"
+  Write-ProgressStep "Application scale down verified" "Completed"
 
   # Step 5: Create Copy Pod
   Write-ProgressStep "Creating data copy Pod" "Running"
@@ -494,6 +547,7 @@ spec:
     runAsNonRoot: true
     runAsUser: $CopyAsUser
     fsGroup: $CopyAsUser
+    fsGroupChangePolicy: "OnRootMismatch"
     seccompProfile:
       type: RuntimeDefault
   containers:
@@ -827,14 +881,29 @@ spec:
 
   Write-ProgressStep "Application updated" "Completed"
 
-  # Step 8: Scale Up Application
-  Write-ProgressStep "Scaling up application" "Running"
+  # Step 8: Manual Scale Up Application
+  Write-ProgressStep "Migration completed - ready for scale up" "Completed"
 
-  Write-StatusMessage "Scaling $ApplicationType '$ApplicationName' back to $originalReplicas replica(s)..."
-  switch ($ApplicationType) {
-    "StatefulSet" { Invoke-Kubectl -n $Namespace scale sts/$ApplicationName "--replicas" "$originalReplicas" | Out-Null }
-    "Deployment"  { Invoke-Kubectl -n $Namespace scale deployment/$ApplicationName "--replicas" "$originalReplicas" | Out-Null }
-  }
+  Write-Host ""
+  Write-Host "[MANUAL ACTION REQUIRED]" -ForegroundColor Green
+  Write-Host "=====================================" -ForegroundColor Green
+  Write-Host "Migration completed! Now scale up the application:" -ForegroundColor Green
+  Write-Host ""
+  Write-Host "Scale up command:" -ForegroundColor Cyan
+  Write-Host "  kubectl -n $Namespace scale $($ApplicationType.ToLower())/$ApplicationName --replicas=$originalReplicas" -ForegroundColor Gray
+  Write-Host ""
+  Write-Host "For ArgoCD managed apps:" -ForegroundColor Cyan
+  Write-Host "  1. Re-enable auto-sync in ArgoCD" -ForegroundColor Gray
+  Write-Host "  2. ArgoCD will sync and start the application automatically" -ForegroundColor Gray
+  Write-Host "=====================================" -ForegroundColor Green
+  Write-Host ""
+
+  # Автоматическое масштабирование закомментировано из-за ArgoCD
+  # Write-StatusMessage "Scaling $ApplicationType '$ApplicationName' back to $originalReplicas replica(s)..."
+  # switch ($ApplicationType) {
+  #   "StatefulSet" { Invoke-Kubectl -n $Namespace scale sts/$ApplicationName --replicas=$originalReplicas | Out-Null }
+  #   "Deployment"  { Invoke-Kubectl -n $Namespace scale deployment/$ApplicationName --replicas=$originalReplicas | Out-Null }
+  # }
 
   Write-ProgressStep "Migration completed successfully!" "Completed"
 
